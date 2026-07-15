@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} - 가지마켓{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>{{ title }}</h1>
+  <div class="chat-log">
+    {% for message in messages %}
+      <div class="chat-message {% if message.sender_id == g.user.id %}mine{% endif %}">
+        <strong>{{ message.username }}</strong>
+        <p>{{ message.message }}</p>
+        <span>{{ message.created_at }}</span>
+      </div>
+    {% else %}
+      <p class="empty">아직 메시지가 없습니다.</p>
+    {% endfor %}
+  </div>
+  <form method="post" class="chat-form">
+    <input name="message" required placeholder="메시지 입력">
+    <button type="submit">전송</button>
+  </form>
+</section>
+{% endblock %}

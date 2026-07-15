@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ product.title }} - 가지마켓{% endblock %}
+{% block content %}
+<section class="detail">
+  <div>
+    {% if product.image_path %}
+      <img class="detail-image" src="{{ url_for('static', filename=product.image_path) }}" alt="{{ product.title }}">
+    {% else %}
+      <div class="detail-image placeholder">GAZI</div>
+    {% endif %}
+  </div>
+  <div class="detail-info">
+    <span class="status">{{ product.status }}</span>
+    <h1>{{ product.title }}</h1>
+    <p class="price big">{{ "{:,}".format(product.price) }}P</p>
+    <p>{{ product.description }}</p>
+    <div class="seller-box">
+      <strong>{{ product.name }}</strong>
+      <span>@{{ product.username }}</span>
+      <p>{{ product.bio or '소개글이 없습니다.' }}</p>
+    </div>
+    <div class="actions">
+      {% if g.user %}
+        {% if g.user.id != product.seller_id %}
+          <a class="button" href="{{ url_for('private_chat', product_id=product.id, seller_id=product.seller_id) }}">1:1 채팅</a>
+          <form method="post" action="{{ url_for('buy_product', product_id=product.id) }}">
+            <button type="submit">송금하기</button>
+          </form>
+        {% else %}
+          <a class="button" href="{{ url_for('product_edit', product_id=product.id) }}">수정</a>
+        {% endif %}
+        <a class="button muted" href="{{ url_for('report_new', target_type='product', target_id=product.id) }}">상품 신고</a>
+        <a class="button muted" href="{{ url_for('report_new', target_type='user', target_id=product.seller_id) }}">판매자 신고</a>
+      {% endif %}
+    </div>
+    <p class="meta">신고 누적 {{ report_count }}건</p>
+  </div>
+</section>
+{% endblock %}

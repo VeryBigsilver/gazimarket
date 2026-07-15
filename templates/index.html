@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}상품 목록 - 가지마켓{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">안전한 동네 중고거래</p>
+    <h1>가지마켓</h1>
+    <p>필요한 물건은 찾고, 쓰지 않는 물건은 안전하게 거래하세요.</p>
+  </div>
+  {% if g.user %}
+    <div class="balance">내 포인트 <strong>{{ "{:,}".format(g.user.points) }}</strong>P</div>
+  {% endif %}
+</section>
+
+<form class="search" method="get">
+  <input name="q" value="{{ query }}" placeholder="상품명 또는 설명 검색">
+  <button type="submit">검색</button>
+</form>
+
+<section class="grid">
+  {% for product in products %}
+    <article class="product-card">
+      <a href="{{ url_for('product_detail', product_id=product.id) }}">
+        {% if product.image_path %}
+          <img src="{{ url_for('static', filename=product.image_path) }}" alt="{{ product.title }}">
+        {% else %}
+          <div class="placeholder">GAZI</div>
+        {% endif %}
+        <div class="card-body">
+          <div class="status">{{ product.status }}</div>
+          <h2>{{ product.title }}</h2>
+          <p class="price">{{ "{:,}".format(product.price) }}P</p>
+          <p class="seller">{{ product.name }} · 신고 {{ product.report_count }}</p>
+        </div>
+      </a>
+    </article>
+  {% else %}
+    <p class="empty">등록된 상품이 없습니다.</p>
+  {% endfor %}
+</section>
+{% endblock %}

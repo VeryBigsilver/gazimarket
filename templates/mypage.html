@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}마이페이지 - 가지마켓{% endblock %}
+{% block content %}
+<section class="columns">
+  <div class="panel">
+    <h1>내 정보</h1>
+    <p class="balance">포인트 <strong>{{ "{:,}".format(g.user.points) }}</strong>P</p>
+    <form method="post" class="stack">
+      <input type="hidden" name="action" value="profile">
+      <label>이름<input name="name" value="{{ g.user.name }}" required></label>
+      <label>이메일<input name="email" type="email" value="{{ g.user.email }}" required></label>
+      <label>소개글<textarea name="bio" rows="4">{{ g.user.bio }}</textarea></label>
+      <button type="submit">프로필 저장</button>
+    </form>
+  </div>
+  <div class="panel">
+    <h2>비밀번호 변경</h2>
+    <form method="post" class="stack">
+      <input type="hidden" name="action" value="password">
+      <label>현재 비밀번호<input name="current_password" type="password" required></label>
+      <label>새 비밀번호<input name="new_password" type="password" required minlength="8"></label>
+      <button type="submit">변경</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>내가 등록한 상품</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>상품</th><th>가격</th><th>상태</th><th>관리</th></tr>
+      {% for product in products %}
+        <tr>
+          <td><a href="{{ url_for('product_detail', product_id=product.id) }}">{{ product.title }}</a></td>
+          <td>{{ "{:,}".format(product.price) }}P</td>
+          <td>{{ product.status }}</td>
+          <td class="row-actions">
+            <a href="{{ url_for('product_edit', product_id=product.id) }}">수정</a>
+            <form method="post" action="{{ url_for('product_delete', product_id=product.id) }}">
+              <button class="link danger" type="submit">삭제</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>거래 내역</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>상품</th><th>구매자</th><th>판매자</th><th>금액</th><th>상태</th><th>처리</th></tr>
+      {% for trade in trades %}
+        <tr>
+          <td>{{ trade.title }}</td>
+          <td>{{ trade.buyer_name }}</td>
+          <td>{{ trade.seller_name }}</td>
+          <td>{{ "{:,}".format(trade.amount) }}P</td>
+          <td>{{ trade.status }}</td>
+          <td>
+            {% if trade.seller_id == g.user.id and trade.status != 'completed' %}
+              <form method="post" action="{{ url_for('complete_transaction', transaction_id=trade.id) }}">
+                <button class="small" type="submit">완료</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}

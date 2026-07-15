@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{% if product %}상품 수정{% else %}상품 등록{% endif %} - 가지마켓{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>{% if product %}상품 수정{% else %}상품 등록{% endif %}</h1>
+  <form method="post" enctype="multipart/form-data" class="stack">
+    <label>상품명<input name="title" required value="{{ product.title if product else '' }}"></label>
+    <label>가격<input name="price" type="number" min="0" required value="{{ product.price if product else '' }}"></label>
+    <label>상품 설명<textarea name="description" required rows="7">{{ product.description if product else '' }}</textarea></label>
+    <label>상품 사진<input name="image" type="file" accept="image/png,image/jpeg,image/gif,image/webp"></label>
+    {% if product %}
+      <label>상태
+        <select name="status">
+          {% for status in ['selling', 'reserved', 'sold'] %}
+            <option value="{{ status }}" {% if product.status == status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endif %}
+    <button type="submit">저장</button>
+  </form>
+</section>
+{% endblock %}

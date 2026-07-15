@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}가지마켓{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="{{ url_for('index') }}">가지마켓</a>
+      <nav>
+        <a href="{{ url_for('index') }}">상품</a>
+        {% if g.user %}
+          <a href="{{ url_for('product_new') }}">등록</a>
+          <a href="{{ url_for('public_chat') }}">전체 채팅</a>
+          <a href="{{ url_for('mypage') }}">마이페이지</a>
+          {% if g.user.role == 'admin' %}<a href="{{ url_for('admin') }}">관리자</a>{% endif %}
+          <a href="{{ url_for('logout') }}">로그아웃</a>
+        {% else %}
+          <a href="{{ url_for('login') }}">로그인</a>
+          <a href="{{ url_for('register') }}">회원가입</a>
+        {% endif %}
+      </nav>
+    </header>
+    <main class="shell">
+      {% for category, message in get_flashed_messages(with_categories=true) %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>
