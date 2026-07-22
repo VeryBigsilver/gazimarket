@@ -4,6 +4,7 @@
 <section class="panel">
   <h1>{% if product %}상품 수정{% else %}상품 등록{% endif %}</h1>
   <form method="post" enctype="multipart/form-data" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>상품명<input name="title" required value="{{ product.title if product else '' }}"></label>
     <label>가격<input name="price" type="number" min="0" required value="{{ product.price if product else '' }}"></label>
     <label>상품 설명<textarea name="description" required rows="7">{{ product.description if product else '' }}</textarea></label>
@@ -12,7 +13,7 @@
       <label>상태
         <select name="status">
           {% for status in ['selling', 'reserved', 'sold'] %}
-            <option value="{{ status }}" {% if product.status == status %}selected{% endif %}>{{ status }}</option>
+            <option value="{{ status }}" {% if product.status == status %}selected{% endif %}>{{ status_label(status) }}</option>
           {% endfor %}
         </select>
       </label>

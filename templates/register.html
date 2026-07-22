@@ -4,6 +4,7 @@
 <section class="panel narrow">
   <h1>회원가입</h1>
   <form method="post" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>아이디<input name="username" required minlength="3"></label>
     <label>비밀번호<input name="password" type="password" required minlength="8"></label>
     <label>이름<input name="name" required></label>

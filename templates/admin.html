@@ -13,10 +13,10 @@
       <tr><th>ID</th><th>아이디</th><th>이름</th><th>상태</th><th>신고</th><th>관리</th></tr>
       {% for user in users %}
         <tr>
-          <td>{{ user.id }}</td><td>{{ user.username }}</td><td>{{ user.name }}</td><td>{{ user.status }}</td><td>{{ user.report_count }}</td>
+          <td>{{ user.id }}</td><td>{{ user.username }}</td><td>{{ user.name }}</td><td>{{ status_label(user.status) }}</td><td>{{ user.report_count }}</td>
           <td class="row-actions">
-            <form method="post"><input type="hidden" name="target_id" value="{{ user.id }}"><button name="action" value="sleep_user" class="small">휴면</button></form>
-            <form method="post"><input type="hidden" name="target_id" value="{{ user.id }}"><button name="action" value="restrict_user" class="small danger">제한</button></form>
+            <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="target_id" value="{{ user.id }}"><button name="action" value="sleep_user" class="small">휴면</button></form>
+            <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="target_id" value="{{ user.id }}"><button name="action" value="restrict_user" class="small danger">제한</button></form>
           </td>
         </tr>
       {% endfor %}
@@ -31,10 +31,10 @@
       <tr><th>ID</th><th>상품</th><th>판매자</th><th>상태</th><th>신고</th><th>관리</th></tr>
       {% for product in products %}
         <tr>
-          <td>{{ product.id }}</td><td>{{ product.title }}</td><td>{{ product.username }}</td><td>{{ product.status }}</td><td>{{ product.report_count }}</td>
+          <td>{{ product.id }}</td><td>{{ product.title }}</td><td>{{ product.username }}</td><td>{{ status_label(product.status) }}</td><td>{{ product.report_count }}</td>
           <td class="row-actions">
-            <form method="post"><input type="hidden" name="target_id" value="{{ product.id }}"><button name="action" value="block_product" class="small">차단</button></form>
-            <form method="post"><input type="hidden" name="target_id" value="{{ product.id }}"><button name="action" value="delete_product" class="small danger">삭제</button></form>
+            <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="target_id" value="{{ product.id }}"><button name="action" value="block_product" class="small">차단</button></form>
+            <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="target_id" value="{{ product.id }}"><button name="action" value="delete_product" class="small danger">삭제</button></form>
           </td>
         </tr>
       {% endfor %}
@@ -49,8 +49,8 @@
       <tr><th>ID</th><th>신고자</th><th>대상</th><th>사유</th><th>상태</th><th>관리</th></tr>
       {% for report in reports %}
         <tr>
-          <td>{{ report.id }}</td><td>{{ report.reporter }}</td><td>{{ report.target_type }} #{{ report.target_id }}</td><td>{{ report.reason }}</td><td>{{ report.status }}</td>
-          <td><form method="post"><input type="hidden" name="target_id" value="{{ report.id }}"><button name="action" value="close_report" class="small">완료</button></form></td>
+          <td>{{ report.id }}</td><td>{{ report.reporter }}</td><td>{{ status_label(report.target_type) }} #{{ report.target_id }}</td><td>{{ report.reason }}</td><td>{{ status_label(report.status) }}</td>
+          <td><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="target_id" value="{{ report.id }}"><button name="action" value="close_report" class="small">완료</button></form></td>
         </tr>
       {% endfor %}
     </table>

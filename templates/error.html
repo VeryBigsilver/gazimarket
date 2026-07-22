@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} - 가지마켓{% endblock %}
+{% block content %}
+<section class="panel narrow">
+  <h1>{{ title }}</h1>
+  <p class="empty">{{ message }}</p>
+  <a class="button" href="{{ url_for('index') }}">상품 목록으로</a>
+</section>
+{% endblock %}

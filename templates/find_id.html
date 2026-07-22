@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}아이디 찾기 - 가지마켓{% endblock %}
+{% block content %}
+<section class="panel narrow">
+  <h1>아이디 찾기</h1>
+  <form method="post" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>이름<input name="name" value="{{ request.form.get('name', '') }}" required></label>
+    <label>이메일<input name="email" type="email" value="{{ request.form.get('email', '') }}" required></label>
+    <button type="submit">아이디 찾기</button>
+  </form>
+  {% if found_username %}
+    <div class="recovery-result">
+      <span>가입된 아이디</span>
+      <strong>{{ found_username }}</strong>
+    </div>
+  {% endif %}
+  <div class="auth-links">
+    <a href="{{ url_for('login') }}">로그인</a>
+    <span aria-hidden="true">·</span>
+    <a href="{{ url_for('reset_password') }}">비밀번호 찾기</a>
+  </div>
+</section>
+{% endblock %}

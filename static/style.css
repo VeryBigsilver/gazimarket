@@ -49,8 +49,44 @@ nav {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+  align-items: center;
   color: var(--muted);
   font-size: 14px;
+}
+
+.nav-form {
+  margin: 0;
+}
+
+.nav-link {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+}
+
+.nav-with-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.badge {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .shell {
@@ -161,6 +197,22 @@ button.danger,
   overflow: hidden;
 }
 
+.product-card.sold {
+  background: #f0f2f1;
+  filter: grayscale(0.85);
+  opacity: 0.72;
+}
+
+.product-card.sold img,
+.product-card.sold .placeholder {
+  background: #d8dcda;
+}
+
+.product-card.sold .status,
+.product-card.sold .price {
+  color: #707775;
+}
+
 .product-card img,
 .placeholder {
   width: 100%;
@@ -226,6 +278,41 @@ button.danger,
   gap: 7px;
   color: var(--muted);
   font-weight: 700;
+}
+
+.auth-links {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.auth-links a {
+  color: var(--brand-dark);
+  font-weight: 700;
+}
+
+.recovery-result {
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #9fbd77;
+  border-radius: 8px;
+  background: #f7fbef;
+}
+
+.recovery-result span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.recovery-result strong {
+  color: var(--brand-dark);
+  font-size: 22px;
 }
 
 .detail,
@@ -343,6 +430,44 @@ th {
   margin-top: 12px;
 }
 
+.room-list {
+  display: grid;
+  gap: 10px;
+}
+
+.room-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.room-item.unread {
+  border-color: #9fbd77;
+  background: #f7fbef;
+}
+
+.room-item p {
+  margin: 5px 0;
+  color: var(--muted);
+}
+
+.room-item span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.room-meta {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .flash {
   margin-bottom: 12px;
   padding: 12px 14px;
@@ -374,8 +499,13 @@ th {
   }
 
   .search,
-  .chat-form {
+  .chat-form,
+  .room-item {
     grid-template-columns: 1fr;
+  }
+
+  .room-meta {
+    justify-items: start;
   }
 
   .hero {

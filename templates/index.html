@@ -19,7 +19,7 @@
 
 <section class="grid">
   {% for product in products %}
-    <article class="product-card">
+    <article class="product-card {% if product.status == 'sold' %}sold{% endif %}">
       <a href="{{ url_for('product_detail', product_id=product.id) }}">
         {% if product.image_path %}
           <img src="{{ url_for('static', filename=product.image_path) }}" alt="{{ product.title }}">
@@ -27,7 +27,7 @@
           <div class="placeholder">GAZI</div>
         {% endif %}
         <div class="card-body">
-          <div class="status">{{ product.status }}</div>
+          <div class="status">{{ status_label(product.status) }}</div>
           <h2>{{ product.title }}</h2>
           <p class="price">{{ "{:,}".format(product.price) }}P</p>
           <p class="seller">{{ product.name }} · 신고 {{ product.report_count }}</p>

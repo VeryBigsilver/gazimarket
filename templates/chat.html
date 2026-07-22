@@ -3,7 +3,15 @@
 {% block content %}
 <section class="panel">
   <h1>{{ title }}</h1>
-  <div class="chat-log">
+  {% if partner %}
+    <p class="meta">상대: {{ partner.name }} @{{ partner.username }}</p>
+  {% endif %}
+  <div
+    class="chat-log"
+    data-messages-url="{{ messages_url }}"
+    data-current-user-id="{{ g.user.id }}"
+    data-last-message-id="{{ messages[-1].id if messages else 0 }}"
+  >
     {% for message in messages %}
       <div class="chat-message {% if message.sender_id == g.user.id %}mine{% endif %}">
         <strong>{{ message.username }}</strong>
@@ -15,8 +23,93 @@
     {% endfor %}
   </div>
   <form method="post" class="chat-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input name="message" required placeholder="메시지 입력">
     <button type="submit">전송</button>
   </form>
 </section>
+<script>
+  (() => {
+    const log = document.querySelector(".chat-log");
+    if (!log) return;
+
+    const messagesUrl = log.dataset.messagesUrl;
+    const currentUserId = Number(log.dataset.currentUserId);
+    let lastMessageId = Number(log.dataset.lastMessageId || "0");
+    let polling = false;
+
+    const scrollToBottom = () => {
+      log.scrollTop = log.scrollHeight;
+    };
+
+    const updateNavBadge = (count) => {
+      const link = document.querySelector(".nav-with-badge");
+      if (!link) return;
+      let badge = link.querySelector(".badge");
+      if (!count) {
+        if (badge) badge.remove();
+        return;
+      }
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "badge";
+        link.appendChild(badge);
+      }
+      badge.textContent = count;
+    };
+
+    const removeEmptyState = () => {
+      const empty = log.querySelector(".empty");
+      if (empty) empty.remove();
+    };
+
+    const appendMessage = (message) => {
+      removeEmptyState();
+      const item = document.createElement("div");
+      item.className = "chat-message";
+      if (Number(message.sender_id) === currentUserId) {
+        item.classList.add("mine");
+      }
+
+      const username = document.createElement("strong");
+      username.textContent = message.username;
+
+      const body = document.createElement("p");
+      body.textContent = message.message;
+
+      const createdAt = document.createElement("span");
+      createdAt.textContent = message.created_at;
+
+      item.append(username, body, createdAt);
+      log.appendChild(item);
+      lastMessageId = Math.max(lastMessageId, Number(message.id));
+    };
+
+    const pollMessages = async () => {
+      if (polling || document.hidden) return;
+      polling = true;
+      try {
+        const response = await fetch(`${messagesUrl}?since_id=${lastMessageId}`, {
+          headers: { "Accept": "application/json" },
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const shouldStickToBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
+        for (const message of data.messages) {
+          appendMessage(message);
+        }
+        updateNavBadge(data.unread_count || 0);
+        if (data.messages.length && shouldStickToBottom) {
+          scrollToBottom();
+        }
+      } finally {
+        polling = false;
+      }
+    };
+
+    scrollToBottom();
+    window.setInterval(pollMessages, 2000);
+    document.addEventListener("visibilitychange", pollMessages);
+  })();
+</script>
 {% endblock %}

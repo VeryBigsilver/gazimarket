@@ -6,6 +6,7 @@
     <h1>내 정보</h1>
     <p class="balance">포인트 <strong>{{ "{:,}".format(g.user.points) }}</strong>P</p>
     <form method="post" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="profile">
       <label>이름<input name="name" value="{{ g.user.name }}" required></label>
       <label>이메일<input name="email" type="email" value="{{ g.user.email }}" required></label>
@@ -16,6 +17,7 @@
   <div class="panel">
     <h2>비밀번호 변경</h2>
     <form method="post" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="password">
       <label>현재 비밀번호<input name="current_password" type="password" required></label>
       <label>새 비밀번호<input name="new_password" type="password" required minlength="8"></label>
@@ -33,10 +35,11 @@
         <tr>
           <td><a href="{{ url_for('product_detail', product_id=product.id) }}">{{ product.title }}</a></td>
           <td>{{ "{:,}".format(product.price) }}P</td>
-          <td>{{ product.status }}</td>
+          <td>{{ status_label(product.status) }}</td>
           <td class="row-actions">
             <a href="{{ url_for('product_edit', product_id=product.id) }}">수정</a>
             <form method="post" action="{{ url_for('product_delete', product_id=product.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="link danger" type="submit">삭제</button>
             </form>
           </td>
@@ -57,10 +60,11 @@
           <td>{{ trade.buyer_name }}</td>
           <td>{{ trade.seller_name }}</td>
           <td>{{ "{:,}".format(trade.amount) }}P</td>
-          <td>{{ trade.status }}</td>
+          <td>{{ status_label(trade.status) }}</td>
           <td>
             {% if trade.seller_id == g.user.id and trade.status != 'completed' %}
               <form method="post" action="{{ url_for('complete_transaction', transaction_id=trade.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="small" type="submit">완료</button>
               </form>
             {% endif %}

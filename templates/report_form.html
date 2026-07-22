@@ -4,6 +4,7 @@
 <section class="panel narrow">
   <h1>신고하기</h1>
   <form method="post" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>대상 유형
       <select name="target_type">
         <option value="product" {% if target_type == 'product' %}selected{% endif %}>상품</option>

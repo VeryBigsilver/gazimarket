@@ -10,7 +10,7 @@
     {% endif %}
   </div>
   <div class="detail-info">
-    <span class="status">{{ product.status }}</span>
+    <span class="status">{{ status_label(product.status) }}</span>
     <h1>{{ product.title }}</h1>
     <p class="price big">{{ "{:,}".format(product.price) }}P</p>
     <p>{{ product.description }}</p>
@@ -24,13 +24,17 @@
         {% if g.user.id != product.seller_id %}
           <a class="button" href="{{ url_for('private_chat', product_id=product.id, seller_id=product.seller_id) }}">1:1 채팅</a>
           <form method="post" action="{{ url_for('buy_product', product_id=product.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit">송금하기</button>
           </form>
         {% else %}
           <a class="button" href="{{ url_for('product_edit', product_id=product.id) }}">수정</a>
+          <a class="button muted" href="{{ url_for('private_chat_list') }}">1:1 채팅 목록</a>
         {% endif %}
-        <a class="button muted" href="{{ url_for('report_new', target_type='product', target_id=product.id) }}">상품 신고</a>
-        <a class="button muted" href="{{ url_for('report_new', target_type='user', target_id=product.seller_id) }}">판매자 신고</a>
+        {% if g.user.id != product.seller_id %}
+          <a class="button muted" href="{{ url_for('report_new', target_type='product', target_id=product.id) }}">상품 신고</a>
+          <a class="button muted" href="{{ url_for('report_new', target_type='user', target_id=product.seller_id) }}">판매자 신고</a>
+        {% endif %}
       {% endif %}
     </div>
     <p class="meta">신고 누적 {{ report_count }}건</p>

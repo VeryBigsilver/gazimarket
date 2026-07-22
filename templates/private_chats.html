@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}1:1 채팅 - 가지마켓{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>1:1 채팅</h1>
+  <div class="room-list">
+    {% for room in chat_rooms %}
+      <a class="room-item {% if room.unread %}unread{% endif %}" href="{{ url_for('private_chat', product_id=room.product.id, seller_id=room.partner.id) }}">
+        <div>
+          <strong>{{ room.product.title }}</strong>
+          <p>{{ room.partner.name }} @{{ room.partner.username }}</p>
+          <span>{{ room.last_message.username }}: {{ room.last_message.message }}</span>
+        </div>
+        <div class="room-meta">
+          <span>{{ room.last_message.created_at }}</span>
+          {% if room.unread %}
+            <strong class="badge">{{ room.unread }}</strong>
+          {% endif %}
+        </div>
+      </a>
+    {% else %}
+      <p class="empty">아직 1:1 채팅이 없습니다.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
