@@ -15,8 +15,15 @@
         <tr>
           <td>{{ user.id }}</td><td>{{ user.username }}</td><td>{{ user.name }}</td><td>{{ status_label(user.status) }}</td><td>{{ user.report_count }}</td>
           <td class="row-actions">
-            <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="target_id" value="{{ user.id }}"><button name="action" value="sleep_user" class="small">휴면</button></form>
-            <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="target_id" value="{{ user.id }}"><button name="action" value="restrict_user" class="small danger">제한</button></form>
+            {% if user.status == 'deleted' %}
+              <span class="meta">탈퇴 처리됨</span>
+            {% else %}
+              {% if user.status in ['dormant', 'restricted'] %}
+                <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="target_id" value="{{ user.id }}"><button name="action" value="activate_user" class="small">정상</button></form>
+              {% endif %}
+              <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="target_id" value="{{ user.id }}"><button name="action" value="sleep_user" class="small">휴면</button></form>
+              <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="target_id" value="{{ user.id }}"><button name="action" value="restrict_user" class="small danger">제한</button></form>
+            {% endif %}
           </td>
         </tr>
       {% endfor %}

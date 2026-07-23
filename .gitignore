@@ -11,6 +11,9 @@ __pycache__/
 venv/
 env/
 
+# Security
+SECURE.md
+
 # Local environment and secrets
 .env
 .env.*

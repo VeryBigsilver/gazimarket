@@ -6,3 +6,12 @@ app:
   max_upload_mb: 4
   host: 0.0.0.0
   port: 5000
+  session_cookie_secure: true
+
+mail:
+  host: ""
+  port: 587
+  username: ""
+  password: ""
+  sender: noreply@gazimarket.local
+  use_tls: true

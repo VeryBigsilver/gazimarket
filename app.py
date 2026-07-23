@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import os
 import logging
+import smtplib
 from logging.handlers import RotatingFileHandler
+from email.message import EmailMessage
 import re
 import secrets
 import sqlite3
 import uuid
+from io import BytesIO
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
@@ -37,6 +40,17 @@ if not CONFIG_PATH.exists():
 CONFIG = yaml.safe_load(CONFIG_PATH.read_text())
 APP_CONFIG = CONFIG["app"]
 
+
+def bool_config(name: str, default: bool) -> bool:
+    env_value = os.environ.get(f"GAZIMARKET_{name.upper()}")
+    if env_value is not None:
+        return env_value.lower() in {"1", "true", "yes", "on"}
+    value = APP_CONFIG.get(name.lower(), default)
+    if isinstance(value, bool):
+        return value
+    return str(value).lower() in {"1", "true", "yes", "on"}
+
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("GAZIMARKET_SECRET_KEY", APP_CONFIG["secret_key"])
 app.config["DATABASE"] = str(BASE_DIR / APP_CONFIG["database"])
@@ -45,10 +59,25 @@ app.config["MAX_CONTENT_LENGTH"] = int(APP_CONFIG["max_upload_mb"]) * 1024 * 102
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = bool_config("session_cookie_secure", True)
 
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+ALLOWED_IMAGE_MIME_TYPES = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+}
+PIL_IMAGE_FORMATS = {
+    "png": "PNG",
+    "jpg": "JPEG",
+    "jpeg": "JPEG",
+    "gif": "GIF",
+    "webp": "WEBP",
+}
 MAX_AUTH_FAILURES = 10
-AUTH_LOCK_MINUTES = 30
+AUTH_DELAY_SECONDS = (30, 60, 300)
 BLOCKED_INPUT_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
@@ -191,6 +220,17 @@ def init_db() -> None:
           UNIQUE (purpose, identifier)
         );
 
+        CREATE TABLE IF NOT EXISTS email_verifications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          purpose TEXT NOT NULL,
+          identifier TEXT NOT NULL,
+          code_hash TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          verified_at TEXT,
+          created_at TEXT NOT NULL,
+          UNIQUE (purpose, identifier)
+        );
+
         CREATE TABLE IF NOT EXISTS security_logs (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           event TEXT NOT NULL,
@@ -277,6 +317,7 @@ def status_label(value: str) -> str:
         "active": "정상",
         "restricted": "이용 제한",
         "dormant": "휴면",
+        "deleted": "탈퇴",
         "selling": "판매 중",
         "reserved": "예약 중",
         "sold": "판매 완료",
@@ -328,8 +369,7 @@ def clean_username(value: str) -> str:
 
 
 def auth_identifier(purpose: str, username: str) -> str:
-    ip_address = request.remote_addr or "unknown"
-    return f"{username.strip().lower()}:{ip_address}:{purpose}"
+    return username.strip().lower()
 
 
 def safe_redirect_target(default: str) -> str:
@@ -340,30 +380,37 @@ def safe_redirect_target(default: str) -> str:
     return target
 
 
-def auth_is_locked(purpose: str, username: str) -> bool:
-    row = get_db().execute(
-        "SELECT locked_until FROM auth_attempts WHERE purpose = ? AND identifier = ?",
+def auth_attempt_row(purpose: str, username: str) -> sqlite3.Row | None:
+    return get_db().execute(
+        "SELECT failures, locked_until FROM auth_attempts WHERE purpose = ? AND identifier = ?",
         (purpose, auth_identifier(purpose, username)),
     ).fetchone()
-    locked_until = parse_time(row["locked_until"] if row else None)
-    if locked_until and locked_until > datetime.utcnow():
-        return True
-    return False
 
 
-def record_auth_failure(purpose: str, username: str) -> None:
+def auth_delay_until(purpose: str, username: str) -> datetime | None:
+    row = auth_attempt_row(purpose, username)
+    delay_until = parse_time(row["locked_until"] if row else None)
+    if delay_until and delay_until > datetime.utcnow():
+        return delay_until
+    return None
+
+
+def auth_delay_seconds(failures: int) -> int:
+    if failures < MAX_AUTH_FAILURES:
+        return 0
+    delay_index = min(failures - MAX_AUTH_FAILURES, len(AUTH_DELAY_SECONDS) - 1)
+    return AUTH_DELAY_SECONDS[delay_index]
+
+
+def record_auth_failure(purpose: str, username: str) -> tuple[int, str | None]:
     db = get_db()
     identifier = auth_identifier(purpose, username)
-    row = db.execute(
-        "SELECT failures FROM auth_attempts WHERE purpose = ? AND identifier = ?",
-        (purpose, identifier),
-    ).fetchone()
+    row = auth_attempt_row(purpose, username)
     failures = (row["failures"] if row else 0) + 1
-    locked_until = None
-    if failures >= MAX_AUTH_FAILURES:
-        locked_until = (datetime.utcnow() + timedelta(minutes=AUTH_LOCK_MINUTES)).isoformat(
-            timespec="seconds"
-        )
+    delay_until = None
+    delay_seconds = auth_delay_seconds(failures)
+    if delay_seconds:
+        delay_until = (datetime.utcnow() + timedelta(seconds=delay_seconds)).isoformat(timespec="seconds")
     db.execute(
         """
         INSERT INTO auth_attempts (purpose, identifier, failures, locked_until, updated_at)
@@ -373,11 +420,12 @@ def record_auth_failure(purpose: str, username: str) -> None:
                       locked_until = excluded.locked_until,
                       updated_at = excluded.updated_at
         """,
-        (purpose, identifier, failures, locked_until, now()),
+        (purpose, identifier, failures, delay_until, now()),
     )
     db.commit()
-    if locked_until:
-        security_log("auth_locked", f"purpose={purpose} identifier={identifier}")
+    if delay_until:
+        security_log("auth_delay", f"purpose={purpose} identifier={identifier} delay_seconds={delay_seconds}")
+    return failures, delay_until
 
 
 def clear_auth_failures(purpose: str, username: str) -> None:
@@ -386,6 +434,91 @@ def clear_auth_failures(purpose: str, username: str) -> None:
         (purpose, auth_identifier(purpose, username)),
     )
     get_db().commit()
+
+
+def verification_identifier(*parts: str) -> str:
+    return ":".join(part.strip().lower() for part in parts)
+
+
+def mail_config(name: str, default: str = "") -> str:
+    mail = CONFIG.get("mail", {}) if isinstance(CONFIG, dict) else {}
+    env_name = f"GAZIMARKET_MAIL_{name.upper()}"
+    return os.environ.get(env_name, str(mail.get(name, default)))
+
+
+def send_verification_email(email: str, code: str, purpose_label: str) -> bool:
+    host = mail_config("host")
+    sender = mail_config("sender", "noreply@gazimarket.local")
+    if not host:
+        app.logger.info("dev_email_verification purpose=%s email=%s code=%s", purpose_label, email, code)
+        return False
+
+    message = EmailMessage()
+    message["Subject"] = f"[가지마켓] {purpose_label} 인증번호"
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(
+        f"가지마켓 {purpose_label} 인증번호는 {code} 입니다.\n"
+        "인증번호는 10분 동안 유효합니다."
+    )
+
+    port = int(mail_config("port", "587"))
+    username = mail_config("username")
+    password = mail_config("password")
+    use_tls = mail_config("use_tls", "true").lower() == "true"
+    with smtplib.SMTP(host, port, timeout=10) as smtp:
+        if use_tls:
+            smtp.starttls()
+        if username:
+            smtp.login(username, password)
+        smtp.send_message(message)
+    return True
+
+
+def create_email_verification(purpose: str, identifier: str, email: str, purpose_label: str) -> str | None:
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    expires_at = (datetime.utcnow() + timedelta(minutes=10)).isoformat(timespec="seconds")
+    get_db().execute(
+        """
+        INSERT INTO email_verifications (purpose, identifier, code_hash, expires_at, verified_at, created_at)
+        VALUES (?, ?, ?, ?, NULL, ?)
+        ON CONFLICT(purpose, identifier)
+        DO UPDATE SET code_hash = excluded.code_hash,
+                      expires_at = excluded.expires_at,
+                      verified_at = NULL,
+                      created_at = excluded.created_at
+        """,
+        (purpose, identifier, generate_password_hash(code), expires_at, now()),
+    )
+    get_db().commit()
+    sent = send_verification_email(email, code, purpose_label)
+    security_log("email_verification_sent", f"purpose={purpose} identifier={identifier}")
+    return None if sent else code
+
+
+def verify_email_code(purpose: str, identifier: str, code: str) -> bool:
+    row = get_db().execute(
+        """
+        SELECT * FROM email_verifications
+        WHERE purpose = ? AND identifier = ?
+        """,
+        (purpose, identifier),
+    ).fetchone()
+    expires_at = parse_time(row["expires_at"] if row else None)
+    if row is None or expires_at is None or expires_at < datetime.utcnow():
+        return False
+    if not check_password_hash(row["code_hash"], code.strip()):
+        return False
+    get_db().execute(
+        """
+        UPDATE email_verifications
+        SET verified_at = ?
+        WHERE purpose = ? AND identifier = ?
+        """,
+        (now(), purpose, identifier),
+    )
+    get_db().commit()
+    return True
 
 
 def private_room_key(product_id: int, user_a: int, user_b: int) -> str:
@@ -526,12 +659,43 @@ def admin_required(view):
 def save_image(file_storage) -> str | None:
     if not file_storage or not file_storage.filename:
         return None
+    from PIL import Image, UnidentifiedImageError
+
     filename = secure_filename(file_storage.filename)
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if extension not in ALLOWED_IMAGE_EXTENSIONS:
         raise ValueError("이미지는 png, jpg, jpeg, gif, webp 형식만 가능합니다.")
+    expected_mimetype = ALLOWED_IMAGE_MIME_TYPES[extension]
+    if file_storage.mimetype and file_storage.mimetype != expected_mimetype:
+        raise ValueError("파일 확장자와 MIME 타입이 일치하지 않습니다.")
+
+    raw = file_storage.stream.read()
+    if not raw:
+        raise ValueError("빈 이미지 파일은 업로드할 수 없습니다.")
+
+    try:
+        image = Image.open(BytesIO(raw))
+        image.verify()
+        image = Image.open(BytesIO(raw))
+        detected_format = image.format
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("실제 이미지 파일만 업로드할 수 있습니다.") from exc
+
+    expected_format = PIL_IMAGE_FORMATS[extension]
+    if detected_format != expected_format:
+        raise ValueError("파일 확장자와 이미지 형식이 일치하지 않습니다.")
+
+    output = BytesIO()
+    save_kwargs: dict[str, object] = {}
+    if expected_format == "JPEG":
+        image = image.convert("RGB")
+        save_kwargs.update({"quality": 90, "optimize": True})
+    elif expected_format in {"PNG", "WEBP"} and image.mode not in {"RGB", "RGBA"}:
+        image = image.convert("RGBA")
+    image.save(output, format=expected_format, **save_kwargs)
+
     unique_name = f"{uuid.uuid4().hex}.{extension}"
-    file_storage.save(Path(app.config["UPLOAD_FOLDER"]) / unique_name)
+    (Path(app.config["UPLOAD_FOLDER"]) / unique_name).write_bytes(output.getvalue())
     return f"uploads/{unique_name}"
 
 
@@ -567,13 +731,24 @@ def find_user_by_name_email(name: str, email: str) -> sqlite3.Row | None:
     ).fetchone()
 
 
-@app.route("/")
-def index():
+def product_list_filters() -> tuple[str, str]:
     try:
         query = clean_text("검색어", request.args.get("q", ""), max_length=80)
     except ValueError as exc:
         flash(str(exc), "error")
         query = ""
+    sort = request.args.get("sort", "latest")
+    if sort not in {"latest", "price_asc", "price_desc"}:
+        sort = "latest"
+    return query, sort
+
+
+def list_products(query: str, sort: str) -> list[sqlite3.Row]:
+    sort_options = {
+        "latest": "p.created_at DESC",
+        "price_asc": "p.price ASC, p.created_at DESC",
+        "price_desc": "p.price DESC, p.created_at DESC",
+    }
     params: list[object] = []
     sql = """
         SELECT p.*, u.username, u.name,
@@ -585,9 +760,27 @@ def index():
     if query:
         sql += " AND (p.title LIKE ? OR p.description LIKE ?)"
         params.extend([f"%{query}%", f"%{query}%"])
-    sql += " ORDER BY p.created_at DESC"
-    products = get_db().execute(sql, params).fetchall()
-    return render_template("index.html", products=products, query=query)
+    sql += f" ORDER BY CASE WHEN p.status = 'sold' THEN 1 ELSE 0 END, {sort_options[sort]}"
+    return get_db().execute(sql, params).fetchall()
+
+
+@app.route("/")
+def index():
+    query, sort = product_list_filters()
+    products = list_products(query, sort)
+    return render_template("index.html", products=products, query=query, sort=sort)
+
+
+@app.route("/products/list")
+def product_list():
+    query, sort = product_list_filters()
+    products = list_products(query, sort)
+    return jsonify(
+        {
+            "html": render_template("product_grid.html", products=products),
+            "count": len(products),
+        }
+    )
 
 
 @app.route("/register", methods=("GET", "POST"))
@@ -630,19 +823,28 @@ def register():
 
 @app.route("/login", methods=("GET", "POST"))
 def login():
+    delay_until_text = None
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        if auth_is_locked("login", username):
-            security_log("login_blocked", f"username={username}")
-            flash("로그인 실패가 반복되어 잠시 후 다시 시도하세요.", "error")
-            return render_template("login.html")
+        delay_until = auth_delay_until("login", username)
+        if delay_until:
+            security_log("login_delayed", f"username={username}")
+            delay_until_text = delay_until.strftime("%Y-%m-%d %H:%M:%S")
+            flash("로그인 실패가 반복되어 잠시 대기해야 합니다.", "error")
+            return render_template("login.html", delay_until=delay_until_text)
         user = get_db().execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
         if user is None or not check_password_hash(user["password_hash"], password):
-            record_auth_failure("login", username)
-            flash("아이디 또는 비밀번호가 올바르지 않습니다.", "error")
+            _failures, delay_until_value = record_auth_failure("login", username)
+            if delay_until_value:
+                delay_until_text = parse_time(delay_until_value).strftime("%Y-%m-%d %H:%M:%S")
+                flash("로그인 실패가 반복되어 잠시 대기해야 합니다.", "error")
+            else:
+                flash("아이디 또는 비밀번호가 올바르지 않습니다.", "error")
         elif user["status"] != "active":
-            record_auth_failure("login", username)
+            _failures, delay_until_value = record_auth_failure("login", username)
+            if delay_until_value:
+                delay_until_text = parse_time(delay_until_value).strftime("%Y-%m-%d %H:%M:%S")
             flash("이용 제한 또는 휴면 상태인 계정입니다.", "error")
         else:
             clear_auth_failures("login", username)
@@ -652,80 +854,126 @@ def login():
             session["user_id"] = user["id"]
             security_log("login_success", f"username={username}", user["id"])
             return redirect(safe_redirect_target(url_for("index")))
-    return render_template("login.html")
+    return render_template("login.html", delay_until=delay_until_text)
 
 
 @app.route("/find-id", methods=("GET", "POST"))
 def find_id():
     found_username = None
+    verification_sent = False
+    dev_code = None
     if request.method == "POST":
+        action = request.form.get("action", "send_code")
         try:
             name = clean_text("이름", request.form.get("name", ""), min_length=1, max_length=50)
             email = clean_email(request.form.get("email", ""))
             user = find_user_by_name_email(name, email)
             if user is None:
                 flash("입력한 정보와 일치하는 계정을 찾을 수 없습니다.", "error")
+            elif action == "send_code":
+                identifier = verification_identifier(name, email)
+                dev_code = create_email_verification("find_id", identifier, email, "아이디 찾기")
+                verification_sent = True
+                flash("이메일로 인증번호를 보냈습니다.", "success")
+            elif action == "verify_code":
+                code = clean_text("인증번호", request.form.get("verification_code", ""), min_length=6, max_length=6)
+                identifier = verification_identifier(name, email)
+                if not verify_email_code("find_id", identifier, code):
+                    verification_sent = True
+                    flash("인증번호가 올바르지 않거나 만료되었습니다.", "error")
+                else:
+                    security_log("email_verified", "purpose=find_id")
+                    flash("이메일 인증이 완료되었습니다.", "success")
+                    found_username = user["username"]
             else:
-                found_username = user["username"]
+                abort(400)
         except ValueError as exc:
             flash(str(exc), "error")
-    return render_template("find_id.html", found_username=found_username)
+    return render_template(
+        "find_id.html",
+        found_username=found_username,
+        verification_sent=verification_sent,
+        dev_code=dev_code,
+    )
 
 
 @app.route("/reset-password", methods=("GET", "POST"))
 def reset_password():
+    verification_sent = False
+    dev_code = None
     if request.method == "POST":
+        action = request.form.get("action", "send_code")
         username = request.form.get("username", "").strip()
         name = request.form.get("name", "")
         email = request.form.get("email", "")
         new_password = request.form.get("new_password", "")
         confirm_password = request.form.get("confirm_password", "")
-        if auth_is_locked("reset_password", username):
-            security_log("reset_password_blocked", f"username={username}")
+        delay_until = auth_delay_until("reset_password", username)
+        if delay_until:
+            security_log("reset_password_delayed", f"username={username}")
             flash("비밀번호 재설정 실패가 반복되어 잠시 후 다시 시도하세요.", "error")
             return render_template("reset_password.html")
         try:
             username = clean_username(username)
             name = clean_text("이름", name, min_length=1, max_length=50)
             email = clean_email(email)
+            user = get_db().execute(
+                """
+                SELECT * FROM users
+                WHERE username = ? AND name = ? AND lower(email) = lower(?)
+                """,
+                (username, name, email),
+            ).fetchone()
+            if user is None:
+                record_auth_failure("reset_password", username)
+                flash("입력한 정보와 일치하는 계정을 찾을 수 없습니다.", "error")
+            elif user["status"] != "active":
+                record_auth_failure("reset_password", username)
+                flash("이용 제한 또는 휴면 상태인 계정은 비밀번호를 재설정할 수 없습니다.", "error")
+            elif action == "send_code":
+                identifier = verification_identifier(username, name, email)
+                dev_code = create_email_verification("reset_password", identifier, email, "비밀번호 찾기")
+                verification_sent = True
+                flash("이메일로 인증번호를 보냈습니다.", "success")
+            elif action == "reset_password":
+                code = clean_text("인증번호", request.form.get("verification_code", ""), min_length=6, max_length=6)
+                identifier = verification_identifier(username, name, email)
+                if not verify_email_code("reset_password", identifier, code):
+                    record_auth_failure("reset_password", username)
+                    verification_sent = True
+                    flash("인증번호가 올바르지 않거나 만료되었습니다.", "error")
+                elif len(new_password) < 8:
+                    record_auth_failure("reset_password", username)
+                    verification_sent = True
+                    flash("새 비밀번호는 8자 이상이어야 합니다.", "error")
+                elif new_password != confirm_password:
+                    record_auth_failure("reset_password", username)
+                    verification_sent = True
+                    flash("새 비밀번호 확인이 일치하지 않습니다.", "error")
+                elif contains_blocked_input(new_password):
+                    record_auth_failure("reset_password", username)
+                    verification_sent = True
+                    flash("비밀번호에 허용되지 않는 문자열이 포함되어 있습니다.", "error")
+                else:
+                    get_db().execute(
+                        "UPDATE users SET password_hash = ? WHERE id = ?",
+                        (generate_password_hash(new_password), user["id"]),
+                    )
+                    get_db().commit()
+                    clear_auth_failures("reset_password", username)
+                    security_log("password_reset", f"username={username}", user["id"])
+                    flash("비밀번호를 재설정했습니다. 새 비밀번호로 로그인하세요.", "success")
+                    return redirect(url_for("login"))
+            else:
+                abort(400)
         except ValueError as exc:
             record_auth_failure("reset_password", username)
             flash(str(exc), "error")
-            return render_template("reset_password.html")
-        user = get_db().execute(
-            """
-            SELECT * FROM users
-            WHERE username = ? AND name = ? AND lower(email) = lower(?)
-            """,
-            (username, name, email),
-        ).fetchone()
-
-        if len(new_password) < 8:
-            record_auth_failure("reset_password", username)
-            flash("새 비밀번호는 8자 이상이어야 합니다.", "error")
-        elif new_password != confirm_password:
-            record_auth_failure("reset_password", username)
-            flash("새 비밀번호 확인이 일치하지 않습니다.", "error")
-        elif contains_blocked_input(new_password):
-            record_auth_failure("reset_password", username)
-            flash("비밀번호에 허용되지 않는 문자열이 포함되어 있습니다.", "error")
-        elif user is None:
-            record_auth_failure("reset_password", username)
-            flash("입력한 정보와 일치하는 계정을 찾을 수 없습니다.", "error")
-        elif user["status"] != "active":
-            record_auth_failure("reset_password", username)
-            flash("이용 제한 또는 휴면 상태인 계정은 비밀번호를 재설정할 수 없습니다.", "error")
-        else:
-            get_db().execute(
-                "UPDATE users SET password_hash = ? WHERE id = ?",
-                (generate_password_hash(new_password), user["id"]),
-            )
-            get_db().commit()
-            clear_auth_failures("reset_password", username)
-            security_log("password_reset", f"username={username}", user["id"])
-            flash("비밀번호를 재설정했습니다. 새 비밀번호로 로그인하세요.", "success")
-            return redirect(url_for("login"))
-    return render_template("reset_password.html")
+    return render_template(
+        "reset_password.html",
+        verification_sent=verification_sent,
+        dev_code=dev_code,
+    )
 
 
 @app.route("/logout", methods=("POST",))
@@ -777,6 +1025,40 @@ def mypage():
                 db.commit()
                 security_log("password_changed", actor_id=g.user["id"])
                 flash("비밀번호를 변경했습니다.", "success")
+        elif action == "delete_account":
+            current = request.form.get("current_password", "")
+            if g.user["role"] == "admin":
+                flash("관리자 계정은 마이페이지에서 탈퇴할 수 없습니다.", "error")
+            elif not check_password_hash(g.user["password_hash"], current):
+                flash("현재 비밀번호가 올바르지 않습니다.", "error")
+            else:
+                deleted_id = g.user["id"]
+                anonymized = f"deleted_user_{deleted_id}"
+                db.execute(
+                    """
+                    UPDATE users
+                    SET username = ?,
+                        password_hash = ?,
+                        name = ?,
+                        email = ?,
+                        bio = '',
+                        points = 0,
+                        status = 'deleted'
+                    WHERE id = ? AND role != 'admin'
+                    """,
+                    (
+                        anonymized,
+                        generate_password_hash(secrets.token_urlsafe(32)),
+                        "탈퇴한 사용자",
+                        f"{anonymized}@deleted.local",
+                        deleted_id,
+                    ),
+                )
+                db.commit()
+                security_log("account_deleted", actor_id=deleted_id)
+                session.clear()
+                flash("회원 탈퇴가 완료되었습니다. 개인정보는 비식별 처리했습니다.", "success")
+                return redirect(url_for("index"))
         return redirect(url_for("mypage"))
 
     products = db.execute(
@@ -905,28 +1187,55 @@ def product_delete(product_id: int):
 @login_required
 def buy_product(product_id: int):
     db = get_db()
-    product = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
-    if product is None or product["blocked"]:
-        abort(404)
-    if product["seller_id"] == g.user["id"]:
-        flash("내 상품은 구매할 수 없습니다.", "error")
-    elif product["status"] != "selling":
-        flash("판매 중인 상품만 구매할 수 있습니다.", "error")
-    elif g.user["points"] < product["price"]:
-        flash("포인트가 부족합니다.", "error")
-    else:
-        db.execute("UPDATE users SET points = points - ? WHERE id = ?", (product["price"], g.user["id"]))
-        db.execute("UPDATE users SET points = points + ? WHERE id = ?", (product["price"], product["seller_id"]))
-        db.execute("UPDATE products SET status = 'reserved', updated_at = ? WHERE id = ?", (now(), product_id))
-        db.execute(
-            """
-            INSERT INTO transactions (product_id, buyer_id, seller_id, amount, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (product_id, g.user["id"], product["seller_id"], product["price"], now()),
-        )
-        db.commit()
-        flash("송금이 완료되었습니다. 판매자가 거래 완료 처리할 수 있습니다.", "success")
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        product = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+        buyer = db.execute("SELECT * FROM users WHERE id = ?", (g.user["id"],)).fetchone()
+        if product is None or product["blocked"]:
+            db.rollback()
+            abort(404)
+        if buyer is None or buyer["status"] != "active":
+            db.rollback()
+            flash("이용할 수 없는 계정입니다.", "error")
+        elif product["seller_id"] == buyer["id"]:
+            db.rollback()
+            flash("내 상품은 구매할 수 없습니다.", "error")
+        elif product["status"] != "selling":
+            db.rollback()
+            flash("판매 중인 상품만 구매할 수 있습니다.", "error")
+        elif buyer["points"] < product["price"]:
+            db.rollback()
+            flash("포인트가 부족합니다.", "error")
+        else:
+            db.execute("UPDATE users SET points = points - ? WHERE id = ?", (product["price"], buyer["id"]))
+            db.execute("UPDATE users SET points = points + ? WHERE id = ?", (product["price"], product["seller_id"]))
+            updated = db.execute(
+                """
+                UPDATE products
+                SET status = 'reserved', updated_at = ?
+                WHERE id = ? AND status = 'selling' AND blocked = 0
+                """,
+                (now(), product_id),
+            ).rowcount
+            if updated != 1:
+                db.rollback()
+                flash("이미 거래 중인 상품입니다.", "error")
+            else:
+                db.execute(
+                    """
+                    INSERT INTO transactions (product_id, buyer_id, seller_id, amount, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (product_id, buyer["id"], product["seller_id"], product["price"], now()),
+                )
+                db.commit()
+                flash("송금이 완료되었습니다. 판매자가 거래 완료 처리할 수 있습니다.", "success")
+    except sqlite3.OperationalError:
+        db.rollback()
+        flash("다른 거래가 처리 중입니다. 잠시 후 다시 시도하세요.", "error")
+    except Exception:
+        db.rollback()
+        raise
     return redirect(url_for("product_detail", product_id=product_id))
 
 
@@ -1189,11 +1498,20 @@ def admin():
             db.execute("DELETE FROM products WHERE id = ?", (target_id,))
             flash("상품을 삭제했습니다.", "success")
         elif action == "restrict_user":
-            db.execute("UPDATE users SET status = 'restricted' WHERE id = ? AND role != 'admin'", (target_id,))
+            db.execute(
+                "UPDATE users SET status = 'restricted' WHERE id = ? AND role != 'admin' AND status != 'deleted'",
+                (target_id,),
+            )
             flash("사용자를 이용 제한했습니다.", "success")
         elif action == "sleep_user":
-            db.execute("UPDATE users SET status = 'dormant' WHERE id = ? AND role != 'admin'", (target_id,))
+            db.execute(
+                "UPDATE users SET status = 'dormant' WHERE id = ? AND role != 'admin' AND status != 'deleted'",
+                (target_id,),
+            )
             flash("사용자를 휴면 처리했습니다.", "success")
+        elif action == "activate_user":
+            db.execute("UPDATE users SET status = 'active' WHERE id = ? AND role != 'admin' AND status != 'deleted'", (target_id,))
+            flash("사용자를 정상 상태로 변경했습니다.", "success")
         elif action == "close_report":
             db.execute("UPDATE reports SET status = 'closed' WHERE id = ?", (target_id,))
             flash("신고를 처리 완료로 변경했습니다.", "success")

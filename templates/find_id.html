@@ -5,10 +5,24 @@
   <h1>아이디 찾기</h1>
   <form method="post" class="stack">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="send_code">
     <label>이름<input name="name" value="{{ request.form.get('name', '') }}" required></label>
     <label>이메일<input name="email" type="email" value="{{ request.form.get('email', '') }}" required></label>
-    <button type="submit">아이디 찾기</button>
+    <button type="submit">인증번호 받기</button>
   </form>
+  {% if verification_sent %}
+    {% if dev_code %}
+      <div class="security-note">개발용 인증번호: {{ dev_code }}</div>
+    {% endif %}
+    <form method="post" class="stack verification-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="verify_code">
+      <input type="hidden" name="name" value="{{ request.form.get('name', '') }}">
+      <input type="hidden" name="email" value="{{ request.form.get('email', '') }}">
+      <label>인증번호<input name="verification_code" required inputmode="numeric" minlength="6" maxlength="6"></label>
+      <button type="submit">인증하고 아이디 확인</button>
+    </form>
+  {% endif %}
   {% if found_username %}
     <div class="recovery-result">
       <span>가입된 아이디</span>

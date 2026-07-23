@@ -9,6 +9,11 @@
     <label>비밀번호<input name="password" type="password" required></label>
     <button type="submit">로그인</button>
   </form>
+  {% if delay_until %}
+    <div class="security-note danger">
+      로그인 실패가 반복되어 {{ delay_until }} 이후 다시 시도할 수 있습니다.
+    </div>
+  {% endif %}
   <div class="auth-links">
     <a href="{{ url_for('find_id') }}">아이디 찾기</a>
     <span aria-hidden="true">·</span>

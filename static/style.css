@@ -135,7 +135,7 @@ nav {
 
 .search {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr minmax(150px, auto) auto;
   gap: 8px;
   margin: 18px 0;
 }
@@ -262,6 +262,10 @@ button.danger,
   margin-bottom: 18px;
 }
 
+.danger-zone {
+  border-color: #d08878;
+}
+
 .narrow {
   width: min(460px, 100%);
   margin-left: auto;
@@ -313,6 +317,29 @@ button.danger,
 .recovery-result strong {
   color: var(--brand-dark);
   font-size: 22px;
+}
+
+.security-note {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #9fbd77;
+  border-radius: 8px;
+  background: #f7fbef;
+  color: var(--brand-dark);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.security-note.danger {
+  border-color: #d08878;
+  background: #fff6f4;
+  color: var(--accent);
+}
+
+.verification-form {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 
 .detail,

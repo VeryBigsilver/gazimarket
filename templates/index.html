@@ -14,28 +14,45 @@
 
 <form class="search" method="get">
   <input name="q" value="{{ query }}" placeholder="상품명 또는 설명 검색">
+  <select name="sort" aria-label="상품 정렬">
+    <option value="latest" {% if sort == 'latest' %}selected{% endif %}>최신순</option>
+    <option value="price_asc" {% if sort == 'price_asc' %}selected{% endif %}>낮은 가격순</option>
+    <option value="price_desc" {% if sort == 'price_desc' %}selected{% endif %}>높은 가격순</option>
+  </select>
   <button type="submit">검색</button>
 </form>
 
-<section class="grid">
-  {% for product in products %}
-    <article class="product-card {% if product.status == 'sold' %}sold{% endif %}">
-      <a href="{{ url_for('product_detail', product_id=product.id) }}">
-        {% if product.image_path %}
-          <img src="{{ url_for('static', filename=product.image_path) }}" alt="{{ product.title }}">
-        {% else %}
-          <div class="placeholder">GAZI</div>
-        {% endif %}
-        <div class="card-body">
-          <div class="status">{{ status_label(product.status) }}</div>
-          <h2>{{ product.title }}</h2>
-          <p class="price">{{ "{:,}".format(product.price) }}P</p>
-          <p class="seller">{{ product.name }} · 신고 {{ product.report_count }}</p>
-        </div>
-      </a>
-    </article>
-  {% else %}
-    <p class="empty">등록된 상품이 없습니다.</p>
-  {% endfor %}
+<section class="grid" data-products-url="{{ url_for('product_list', q=query, sort=sort) }}">
+  {% include "product_grid.html" %}
 </section>
+<script>
+  (() => {
+    const grid = document.querySelector(".grid[data-products-url]");
+    if (!grid) return;
+
+    let refreshing = false;
+    let lastHtml = grid.innerHTML;
+
+    const refreshProducts = async () => {
+      if (refreshing || document.hidden) return;
+      refreshing = true;
+      try {
+        const response = await fetch(grid.dataset.productsUrl, {
+          headers: { "Accept": "application/json" },
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data.html && data.html !== lastHtml) {
+          grid.innerHTML = data.html;
+          lastHtml = data.html;
+        }
+      } finally {
+        refreshing = false;
+      }
+    };
+
+    window.setInterval(refreshProducts, 3000);
+    document.addEventListener("visibilitychange", refreshProducts);
+  })();
+</script>
 {% endblock %}

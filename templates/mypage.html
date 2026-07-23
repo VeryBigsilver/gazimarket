@@ -74,4 +74,14 @@
     </table>
   </div>
 </section>
+
+<section class="panel danger-zone">
+  <h2>회원 탈퇴</h2>
+  <form method="post" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="delete_account">
+    <label>현재 비밀번호<input name="current_password" type="password" required></label>
+    <button class="danger" type="submit">회원 탈퇴</button>
+  </form>
+</section>
 {% endblock %}

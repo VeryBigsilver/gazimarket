@@ -45,6 +45,23 @@ cp config.example.yaml config.yaml
 export GAZIMARKET_SECRET_KEY=충분히_긴_랜덤_문자열
 ```
 
+세션 쿠키는 기본적으로 `Secure` 속성을 사용합니다. HTTPS 환경에서는 그대로 사용하고, 로컬 HTTP 개발에서 브라우저가 세션 쿠키를 저장하지 못하면 아래처럼 개발 중에만 끌 수 있습니다.
+
+```bash
+export GAZIMARKET_SESSION_COOKIE_SECURE=0
+```
+
+아이디 찾기/비밀번호 찾기의 이메일 인증번호를 실제 메일로 보내려면 `config.yaml`의 `mail` 값을 설정하거나 아래 환경변수를 지정합니다. 설정하지 않으면 개발용으로 화면과 서버 로그에 인증번호가 표시됩니다.
+
+```bash
+export GAZIMARKET_MAIL_HOST=smtp.example.com
+export GAZIMARKET_MAIL_PORT=587
+export GAZIMARKET_MAIL_USERNAME=메일계정
+export GAZIMARKET_MAIL_PASSWORD=메일비밀번호
+export GAZIMARKET_MAIL_SENDER=noreply@example.com
+export GAZIMARKET_MAIL_USE_TLS=true
+```
+
 venv를 자동으로 준비하고 실행하려면:
 
 ```bash
